@@ -37,6 +37,7 @@
     "@bruju/wasm-tree": "^0.1.0",
     "@graphy/core.data.factory": "^4.2.1",
     "@rdfjs/namespace": "^1.1.0",
+    "graphy": "^4.2.1",
     "n3": "^1.5.0"
   }
 }
