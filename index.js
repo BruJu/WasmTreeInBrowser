@@ -2,7 +2,9 @@
 // https://github.com/BruJu/WasmTreeDataset
 const wasmtree = require("/home/bruju/LIRIS/WasmTreeDataset/wasm-tree-frontend");
 // https://github.com/BruJu/Portable-Reasoning-in-Web-Assembly
-const sophia_wasm = require("/home/bruju/LIRIS/Portable-Reasoning-in-Web-Assembly/sophia-wasm/pkg")
+const sophia_wasm = require("/home/bruju/LIRIS/PRIWA2/Portable-Reasoning-in-Web-Assembly/sophia-wasm/pkg")
+const sophia_wasm_w = require("/home/bruju/LIRIS/PRIWA2/Portable-Reasoning-in-Web-Assembly/sophia-wasm/pkg/wrapper")
+
 
 /* == OTHER LIBRARIES (can be used both as a baseline and to steal their functions) == */
 const factory = require("@graphy/core.data.factory");
@@ -37,7 +39,16 @@ function populateSourceFiles() {
 populateSourceFiles();
 
 datasetKinds = {};
-function addDatasetKind(initializer, name) {
+function addDatasetKind(className, name) {
+    let select = $("#datasetkind");
+
+    datasetKinds[name] = () => new className();
+
+    select.append($('<option></option>')
+        .attr('value', name)
+        .text(name));
+}
+function addDatasetKindFromFunc(initializer, name) {
     let select = $("#datasetkind");
 
     datasetKinds[name] = initializer;
@@ -47,8 +58,33 @@ function addDatasetKind(initializer, name) {
         .text(name));
 }
 
-addDatasetKind(() => new wasmtree.Dataset(), "Wasm Tree");
-addDatasetKind(() => new sophia_wasm.ArrayDataset(), "Array Dataset");
+datasetsToAdd = [
+    [wasmtree.Dataset            , "Wasm Tree Dataset"],
+    [sophia_wasm.ArrayDataset    , "Array Dataset"],
+    [sophia_wasm.LightDataset    , "Light Dataset"],
+    [sophia_wasm.FastDataset     , "Fast Dataset"],
+    [sophia_wasm.TreedDataset    , "Tree Dataset"],
+    [sophia_wasm.FullDataset     , "Full Dataset"],
+    [sophia_wasm.LightDatasetToA , "Light Dataset into Array Dataset"],
+    [sophia_wasm.FastDatasetToA  , "Fast Dataset into Array Dataset"],
+    [sophia_wasm.TreedDatasetToA , "Tree Dataset into Array Dataset"],
+    [sophia_wasm.FullDatasetToA  , "Full Dataset into Array Dataset"],
+]
+
+initializersToAdd = [
+    [() => new sophia_wasm_w.SophiaDatasetWrapper(new sophia_wasm.TreedDataset())   , "Wrapped Tree Dataset"],
+    [() => new sophia_wasm_w.SophiaDatasetWrapper(new sophia_wasm.FastDataset())    , "Wrapped Fast Dataset"],
+]
+
+for (const datasetToAdd of initializersToAdd) {
+    addDatasetKindFromFunc(datasetToAdd[0], datasetToAdd[1]);
+}
+
+for (const datasetToAdd of datasetsToAdd) {
+    addDatasetKind(datasetToAdd[0], datasetToAdd[1]);
+}
+
+
 
 // Returns a pattern in the form of an array of 4 terms
 // Aligned with sophia_rdf_wasm_benchmark (or whatever name I gave to my sophia_benchmark fork)
@@ -85,6 +121,7 @@ function benchmark(datasetInstancier, datasetFilename, requestNumber, callback) 
 
         const parser = new n3.Parser();
         let result = parser.parse(content);
+
         // Fill the dataset
         const dataset = datasetInstancier();
 
@@ -106,6 +143,7 @@ function benchmark(datasetInstancier, datasetFilename, requestNumber, callback) 
         const beginForEachMeasure = performance.now();
         let n = 0;
         matchResult.forEach(_ => { ++n; });
+        //n = matchResult.size;
         const endForEachMeasure = performance.now();
 
         freeDataset(matchResult);
@@ -127,25 +165,34 @@ function benchmark(datasetInstancier, datasetFilename, requestNumber, callback) 
 //    console.log
 //);
 
-function startbenchmark() {
+function readUserInput() {
     let file = $("#sourcefile option:selected").val();
     let dataset = $("#datasetkind option:selected").val();
     let queryNumber = $("input[name='query']:checked").val();
 
     if (file == null || dataset == null || queryNumber == null) {
         // TODO : error message
-        return;
+        return undefined;
     }
 
     let instancier = datasetKinds[dataset];
     if (instancier == null) {
         // TODO : error message
-        return;
+        return undefined;
     }
 
-    $("#startbenchmark").attr("disabled", "true");
+    return [file, dataset, instancier, parseInt(queryNumber)];
+}
 
-    benchmark(instancier, file, parseInt(queryNumber),
+function startbenchmark() {
+    const userInput = readUserInput();
+    if (userInput === undefined) return;
+
+    const [file, _, instancier, queryNumber] = readUserInput();
+
+    changeDisableStatusOfEveryButton("true");
+
+    benchmark(instancier, file, queryNumber,
         results => {
             function f(num) {
                 return num.toLocaleString(undefined, { maximumFractionDigits: 3, minimumFractionDigits: 0 });
@@ -162,9 +209,110 @@ function startbenchmark() {
             let content = Mustache.render(template, parsedResults);
             $("#resulttable").html(content);
 
-            $("#startbenchmark").attr("disabled", false);
+            changeDisableStatusOfEveryButton(false);
         }
     );
 }
 
-$("#startbenchmark").click(startbenchmark);
+function forEachBenchmark() {
+    const userInput = readUserInput();
+    if (userInput === undefined) return;
+
+    const [datasetFilename, _1, instancier, _2] = readUserInput();
+    changeDisableStatusOfEveryButton("true");
+
+    let countMethods = [
+        ["classicLoop", function (dataset) {
+            let n = 0;
+            for (let _ of dataset.getIteratorExperiment(2)) {
+                ++n;
+            }
+            return n;
+        }],
+        ["arrayIterator", function (dataset) {
+            let n = 0;
+            for (let _ of dataset.getIteratorExperiment(1)) {
+                ++n;
+            }
+            return n;
+        }],
+        ["almostSafeIterator", function (dataset) {
+            let n = 0;
+            for (let _ of dataset.getIteratorExperiment(3)) {
+                ++n;
+            }
+            return n;
+        }],
+        ["forEach", function (dataset) {
+            let n = 0;
+            dataset.forEachExperiment(_ => { ++n; }, 1);
+            return n;
+        }],
+        ["forEachNoLeak", function (dataset) {
+            let n = 0;
+            dataset.forEachExperiment(_ => { ++n; }, 2);
+            return n;
+        }]
+    ];
+
+    let measuredBench = {};
+    let missingBenchs = [];
+
+    const NUMBER_OF_BENCHS = 10;
+    let left_benches = 0;
+
+    for (let countMethod of countMethods) {
+        measuredBench[countMethod[0]] = [];
+        missingBenchs.push(NUMBER_OF_BENCHS);
+        left_benches += NUMBER_OF_BENCHS;
+    }
+
+    $.get(datasetFilename, function (content) {
+        const parser = new n3.Parser();
+        let quads = parser.parse(content);
+
+        let dataset = instancier();
+        dataset.addAll(quads);
+
+        while (left_benches != 0) {
+            // Pick a random for each / counting method
+            let forEachMethod = function(){
+                let randomValue;
+                do {
+                    randomValue = Math.floor(Math.random() * countMethods.length);
+                } while(missingBenchs[randomValue] === 0);
+
+                --missingBenchs[randomValue];
+                return countMethods[randomValue];
+            }();
+
+            const beginTime = performance.now();
+            let _ = forEachMethod[1](dataset);
+            const endTime = performance.now();
+
+            measuredBench[forEachMethod[0]].push(endTime - beginTime);
+
+            --left_benches;
+        }
+
+        dataset.free();
+
+        $("#benchjson").val(JSON.stringify(measuredBench));
+        changeDisableStatusOfEveryButton(false);
+    }, 'text');
+}
+
+const listOfButtons = {
+    "#startbenchmark": startbenchmark,
+    "#forEachBenchmark": forEachBenchmark
+}
+
+for (let button in listOfButtons) {
+    $(button).click(listOfButtons[button]);
+}
+
+function changeDisableStatusOfEveryButton(newStatus) {
+    for (let button in listOfButtons) {
+        $(button).attr("disabled", newStatus);
+    }
+}
