@@ -2,30 +2,30 @@
 // https://github.com/BruJu/WasmTreeDataset
 const wasmtree = require("/home/bruju/LIRIS/WasmTreeDataset/wasm-tree-frontend");
 // https://github.com/BruJu/Portable-Reasoning-in-Web-Assembly
-const sophia_wasm = require("/home/bruju/LIRIS/PRIWA2/Portable-Reasoning-in-Web-Assembly/sophia-wasm/pkg")
-const sophia_wasm_w = require("/home/bruju/LIRIS/PRIWA2/Portable-Reasoning-in-Web-Assembly/sophia-wasm/pkg/wrapper")
+const sophia_wasm = require("/home/bruju/LIRIS/wasmify_sophia/sophia-wasm/pkg")
+const sophia_wasm_w = require("//home/bruju/LIRIS/wasmify_sophia/sophia-wasm/pkg/wrapper")
 
 
 /* == OTHER LIBRARIES (can be used both as a baseline and to steal their functions) == */
 const factory = require("@graphy/core.data.factory");
 const n3 = require("n3");
-//const graphy = require("graphy");
+const graphyDataset = require('@graphy/memory.dataset.fast');
 
 /* == ACTUAL CODE == */
+
+const availableFiles = [
+    { "triples":    10000, "filename": "persondata_en_10k.ttl"},
+    { "triples":    20000, "filename": "persondata_en_20k.ttl"},
+    { "triples":    40000, "filename": "persondata_en_40k.ttl"},
+    { "triples":    80000, "filename": "persondata_en_80k.ttl"},
+    { "triples":   100000, "filename": "persondata_en_100k.ttl"},
+    { "triples":  1000000, "filename": "persondata_en_1M.ttl"},
+    { "triples": 10310106, "filename": "persondata_en.ttl"}
+];
 
 function populateSourceFiles() {
     let select = $("#sourcefile");
     select.empty();
-
-    const availableFiles = [
-        { "triples":    10000, "filename": "persondata_en_10k.ttl"},
-        { "triples":    20000, "filename": "persondata_en_20k.ttl"},
-        { "triples":    40000, "filename": "persondata_en_40k.ttl"},
-        { "triples":    80000, "filename": "persondata_en_80k.ttl"},
-        { "triples":   100000, "filename": "persondata_en_100k.ttl"},
-        { "triples":  1000000, "filename": "persondata_en_1M.ttl"},
-        { "triples": 10310106, "filename": "persondata_en.ttl"}
-    ];
 
     $.each(availableFiles, function() {
         select.append(
@@ -74,6 +74,7 @@ datasetsToAdd = [
 initializersToAdd = [
     [() => new sophia_wasm_w.SophiaDatasetWrapper(new sophia_wasm.TreedDataset())   , "Wrapped Tree Dataset"],
     [() => new sophia_wasm_w.SophiaDatasetWrapper(new sophia_wasm.FastDataset())    , "Wrapped Fast Dataset"],
+    [() => graphyDataset(), "Graphy"]
 ]
 
 for (const datasetToAdd of initializersToAdd) {
@@ -214,6 +215,177 @@ function startbenchmark() {
     );
 }
 
+function benchmarkForPlot() {
+    const userInput = readUserInput();
+    if (userInput === undefined) return;
+
+    const [_file, _, _instancier, queryNumber] = userInput;
+
+    changeDisableStatusOfEveryButton("true");
+
+    datasets = {
+        "WasmTree": () => new wasmtree.Dataset(),
+        "TreeDataset": () => new sophia_wasm.TreedDataset(),
+        "Graphy": graphyDataset,
+        "WrappedTree": () => new sophia_wasm_w.SophiaDatasetWrapper(new sophia_wasm.TreedDataset())
+    }
+
+    // Build benchmark list
+    const sizeLimit = 100000;
+    const numberOFBenchs = parseInt($("#benchPlot").val());
+    const benchMultiplier = parseInt($("#benchMultiplier").val());
+    let totalBenchmarks = 0;
+
+    let fileContent = {};
+    
+    let benchsToRun = [];
+
+    let sizesToLoad = [];
+
+    for (let file of availableFiles) {
+        if (file.triples > sizeLimit) {
+            continue;
+        }
+
+        sizesToLoad.push([file.triples, file.filename]);
+
+        // Add benchmarks for this file
+        for (let datasetName in datasets) {
+            let item = {
+                'datasetName': datasetName,
+                'instancier': datasets[datasetName],
+                'size': file.triples,
+                'leftMeasures': numberOFBenchs
+            };
+
+            benchsToRun.push(item);
+
+            totalBenchmarks++;
+        }
+    }
+
+    function nextStep(i) {
+        if (i == sizesToLoad.length) {
+            benchmarkForPlotMeasures(benchsToRun, totalBenchmarks, benchMultiplier, queryNumber, fileContent);
+        } else {
+            $.get(sizesToLoad[i][1], function (content) {
+                const parser = new n3.Parser();
+                let quads = parser.parse(content);
+                fileContent[sizesToLoad[i][0]] = quads;
+                nextStep(i + 1);
+            });
+        }
+    }
+
+    nextStep(0);
+}
+
+
+function benchmarkForPlotMeasures(benchsToRun, totalBenchmarks, benchMultiplier, queryNumber, fileContent) {
+    // Run benchmarks
+    measures = [];
+    measures.push("dataset,size,t_load,t_match,t_loop");
+
+    function freeDataset(ds) {
+        if (ds.free !== undefined) {
+            ds.free();
+        }
+    }
+
+    // Prepare match
+    const matchPattern = getPatternForRequest(queryNumber);
+
+    while (totalBenchmarks !== 0) {
+        let randomValue = Math.floor(Math.random() * benchsToRun.length);
+        let benchToRun = benchsToRun[randomValue];
+
+        if (benchToRun.leftMeasures === 0) {
+            continue;
+        }
+
+        const content = fileContent[benchToRun.size];
+        console.log(benchToRun);
+        for (let i = 0 ; i != benchMultiplier ; ++i) {
+
+            // Fill the dataset
+            const dataset = benchToRun.instancier();
+            const beginFillTime = performance.now();
+            dataset.addAll(content);
+            const endFillTime = performance.now();
+
+            // First match (used to trigger any caching system)
+            freeDataset(applyMatch(dataset, matchPattern));
+
+            // Second match (measured)
+            const beginSecondMatchTime = performance.now();
+            const matchResult = applyMatch(dataset, matchPattern);
+            const endSecondMatchTime = performance.now();
+
+            let iterOn;
+
+            if (matchResult[Symbol.iterator] === undefined) {
+                iterOn = {
+                    [Symbol.iterator]() {
+                        return {
+                            iter: matchResult.getIterator(),
+                            previous: undefined,
+                            next() {
+                                if (this.previous !== undefined) {
+                                    this.previous.free();
+                                    this.previous = undefined;
+                                }
+                                if (this.iter === undefined) {
+                                    return { value: undefined, done: true };
+                                }
+    
+                                let wasm_next = this.iter.next();
+                                let done = wasm_next.done;
+                                if (!done) {
+                                    let wasm_quad = wasm_next.value;
+                                    this.previous = wasm_quad;
+                                    return { value: wasm_quad, done: false };
+                                } else {
+                                    wasm_next.free();
+                                    this.iter.free();
+                                    this.iter = undefined;
+                                    return { value: undefined, done: true };
+                                }
+                            }
+                        };
+                    }
+                };
+            } else {
+                iterOn = matchResult;
+            }
+
+            const beginForEachMeasure = performance.now();
+            let n = 0;
+            for (let _q of iterOn) {
+                ++n;
+            }
+            const endForEachMeasure = performance.now();
+
+            freeDataset(matchResult);
+
+            freeDataset(dataset);
+
+            const fill = (endFillTime - beginFillTime) / 1000;
+            const cachedMatch = (endSecondMatchTime - beginSecondMatchTime) / 1000;
+            const forEachTime = (endForEachMeasure - beginForEachMeasure) / 1000;
+
+            measures.push(benchToRun.datasetName
+                + "," + benchToRun.size
+                + "," + fill + "," + cachedMatch + "," + forEachTime
+            );
+        }
+
+        totalBenchmarks--;
+    }
+
+    $("#benchplot").val(JSON.stringify(measures));
+    changeDisableStatusOfEveryButton(false);
+}
+
 function forEachBenchmark() {
     const userInput = readUserInput();
     if (userInput === undefined) return;
@@ -304,7 +476,8 @@ function forEachBenchmark() {
 
 const listOfButtons = {
     "#startbenchmark": startbenchmark,
-    "#forEachBenchmark": forEachBenchmark
+    "#forEachBenchmark": forEachBenchmark,
+    "#benchmarkPlotButton": benchmarkForPlot
 }
 
 for (let button in listOfButtons) {
