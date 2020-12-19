@@ -1,26 +1,24 @@
 /* == BENCHMARKED LIBRARIES == */
 // https://github.com/BruJu/WasmTreeDataset
-const wasmtree = require("/home/bruju/LIRIS/WasmTreeDataset/wasm-tree-frontend");
-// https://github.com/BruJu/Portable-Reasoning-in-Web-Assembly
-const sophia_wasm = require("/home/bruju/LIRIS/wasmify_sophia/sophia-wasm/pkg")
-const sophia_wasm_w = require("//home/bruju/LIRIS/wasmify_sophia/sophia-wasm/pkg/wrapper")
-
+//const wasmtree = require("@bruju/wasm-tree");
+// https://github.com/BruJu/wasmify-sophia
+const sophia_wasm = require("@bruju/sophia_wasm")
+const sophia_wasm_w = require("@bruju/sophia_wasm/wrapper.js")
 
 /* == OTHER LIBRARIES (can be used both as a baseline and to steal their functions) == */
-const factory = require("@graphy/core.data.factory");
 const n3 = require("n3");
 const graphyDataset = require('@graphy/memory.dataset.fast');
 
 /* == ACTUAL CODE == */
 
 const availableFiles = [
-    { "triples":    10000, "filename": "persondata_en_10k.ttl"},
-    { "triples":    20000, "filename": "persondata_en_20k.ttl"},
-    { "triples":    40000, "filename": "persondata_en_40k.ttl"},
-    { "triples":    80000, "filename": "persondata_en_80k.ttl"},
-    { "triples":   100000, "filename": "persondata_en_100k.ttl"},
-    { "triples":  1000000, "filename": "persondata_en_1M.ttl"},
-    { "triples": 10310106, "filename": "persondata_en.ttl"}
+    { "triples":    10000, "filename": "data/persondata_en_10k.ttl"},
+    { "triples":    20000, "filename": "data/persondata_en_20k.ttl"},
+    { "triples":    40000, "filename": "data/persondata_en_40k.ttl"},
+    { "triples":    80000, "filename": "data/persondata_en_80k.ttl"},
+    { "triples":   100000, "filename": "data/persondata_en_100k.ttl"},
+    { "triples":  1000000, "filename": "data/persondata_en_1M.ttl"},
+    { "triples": 10310106, "filename": "data/persondata_en.ttl"}
 ];
 
 function populateSourceFiles() {
@@ -59,20 +57,20 @@ function addDatasetKindFromFunc(initializer, name) {
 }
 
 datasetsToAdd = [
-    [wasmtree.Dataset            , "Wasm Tree Dataset"],
+    //[wasmtree.Dataset            , "Wasm Tree Dataset"],
     [sophia_wasm.ArrayDataset    , "Array Dataset"],
     [sophia_wasm.LightDataset    , "Light Dataset"],
     [sophia_wasm.FastDataset     , "Fast Dataset"],
-    [sophia_wasm.TreedDataset    , "Tree Dataset"],
+    [sophia_wasm.TreeDataset     , "Tree Dataset"],
     [sophia_wasm.FullDataset     , "Full Dataset"],
     [sophia_wasm.LightDatasetToA , "Light Dataset into Array Dataset"],
     [sophia_wasm.FastDatasetToA  , "Fast Dataset into Array Dataset"],
-    [sophia_wasm.TreedDatasetToA , "Tree Dataset into Array Dataset"],
+    [sophia_wasm.TreeDatasetToA  , "Tree Dataset into Array Dataset"],
     [sophia_wasm.FullDatasetToA  , "Full Dataset into Array Dataset"],
 ]
 
 initializersToAdd = [
-    [() => new sophia_wasm_w.SophiaDatasetWrapper(new sophia_wasm.TreedDataset())   , "Wrapped Tree Dataset"],
+    [() => new sophia_wasm_w.SophiaDatasetWrapper(new sophia_wasm.TreeDataset())    , "Wrapped Tree Dataset"],
     [() => new sophia_wasm_w.SophiaDatasetWrapper(new sophia_wasm.FastDataset())    , "Wrapped Fast Dataset"],
     [() => graphyDataset(), "Graphy"]
 ]
@@ -120,6 +118,7 @@ function benchmark(datasetInstancier, datasetFilename, requestNumber, callback) 
             }
         }
 
+        console.log("hello")
         const parser = new n3.Parser();
         let result = parser.parse(content);
 
@@ -224,7 +223,7 @@ function benchmarkForPlot() {
     changeDisableStatusOfEveryButton("true");
 
     datasets = {
-        "WasmTree": () => new wasmtree.Dataset(),
+        //"WasmTree": () => new wasmtree.Dataset(),
         "TreeDataset": () => new sophia_wasm.TreedDataset(),
         "Graphy": graphyDataset,
         "WrappedTree": () => new sophia_wasm_w.SophiaDatasetWrapper(new sophia_wasm.TreedDataset())
@@ -323,7 +322,7 @@ function benchmarkForPlotMeasures(benchsToRun, totalBenchmarks, benchMultiplier,
 
             let iterOn;
 
-            if (matchResult[Symbol.iterator] === undefined) {
+            if (false && matchResult[Symbol.iterator] === undefined) {
                 iterOn = {
                     [Symbol.iterator]() {
                         return {

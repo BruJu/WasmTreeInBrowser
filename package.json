@@ -35,6 +35,7 @@
   },
   "dependencies": {
     "@bruju/wasm-tree": "^0.1.0",
+    "@bruju/sophia_wasm": "https://github.com/BruJu/wasmify-sophia/releases/download/v0.1.0/bruju-sophia_wasm-0.1.0.tgz",
     "@graphy/core.data.factory": "^4.2.1",
     "@graphy/memory.dataset.fast": "^4.2.1",
     "@rdfjs/namespace": "^1.1.0",
